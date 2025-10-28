@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 import pandas as pd
 import numpy as np
+from datetime import datetime
 
 # ------------------ static column names ------------------
 M_BLIS = "Blis Creative ID"
@@ -60,7 +61,10 @@ def normalize_id(x):
 def make_comparison(input_xlsx: str):
     p = Path(input_xlsx)
     assert p.exists(), f"File not found: {p}"
-    out_p = p.with_name(p.stem + "_comparison_static_fixed_v3.xlsx")
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_p = p.with_name(f"discrepancyReport_{timestamp}.xlsx")
+    # out_p = p.with_name(p.stem + "_comparison_static_fixed_v3.xlsx")
 
     xl = pd.ExcelFile(p)
     sheets = {name.lower(): name for name in xl.sheet_names}
@@ -478,6 +482,6 @@ def make_comparison(input_xlsx: str):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python compare_reports_static_fixed_v3.py /path/to/input.xlsx")
+        print("Usage: python descrepancy_automation_script.py descrepancyTemplate.xlsx")
         sys.exit(1)
     make_comparison(sys.argv[1])
