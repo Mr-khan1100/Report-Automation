@@ -427,7 +427,7 @@ def make_comparison(input_xlsx: str):
                     totals['DCM invalid Click'] = dcm_frame['DCM invalid Click'].sum()
 
             def pct_total(numer_total, denom_total):
-                return round((numer_total - denom_total) / denom_total * 100, 2) if denom_total != 0 else np.nan
+                return round((numer_total - denom_total) / numer_total * 100, 2) if numer_total != 0 else np.nan
             if 'Blis Requested Impression' in merged.columns and 'DCM impression' in merged.columns:
                 totals['blis vs DCM impression %'] = pct_total(totals.get('Blis Requested Impression',0), totals.get('DCM impression',0))
             if 'Blis clicks' in merged.columns and 'DCM click' in merged.columns:
