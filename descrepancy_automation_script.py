@@ -30,6 +30,7 @@ B_WIN = "Blis win count"
 D_DATE = "Date"
 D_PLACEMENT = "DCM Placement ID"
 D_IMP = "DCM impression"
+D_INVALID_IMP = "DCM invalid Impression"  # optional
 D_CLICK = "DCM click"
 D_INVALID = "DCM invalid Click"  # optional
 
@@ -47,7 +48,7 @@ def to_ymd(series):
 def pct_safe_num(numer_arr, denom_arr):
     d = denom_arr
     b = numer_arr
-    return np.where(d == 0, np.nan, (b - d) / d * 100)
+    return np.where(d == 0, np.nan, (b - d) / b * 100)
 
 def safe_sum(series):
     return 0 if (series is None or len(series) == 0) else series.sum()
@@ -112,22 +113,47 @@ def make_comparison(input_xlsx: str):
     else:
         blis_agg = pd.DataFrame(columns=['__blis_key','date',"Blis Requested Impression","Blis Shown Impression","Blis clicks","Blis Raw clicks","Blis win count"])
 
+    # # ------------------ prepare DCM aggregation (placement + date) ------------------
+    # if dcm is not None:
+    #     if D_PLACEMENT not in dcm.columns:
+    #         raise ValueError(f"DCM sheet must have '{D_PLACEMENT}' column.")
+    #     dcm['__dcm_key'] = dcm[D_PLACEMENT].astype(str).apply(normalize_id)
+    #     dcm['date'] = to_ymd(dcm[D_DATE]) if D_DATE in dcm.columns else to_ymd(dcm.iloc[:,0])
+    #     for c in [D_IMP, D_CLICK, D_INVALID]:
+    #         if c not in dcm.columns:
+    #             dcm[c] = 0
+    #         dcm[c] = pd.to_numeric(dcm[c], errors='coerce').fillna(0)
+    #     dcm_agg = dcm.groupby(['__dcm_key','date'], as_index=False).agg({
+    #         D_IMP: 'sum', D_CLICK: 'sum', D_INVALID: 'sum'
+    #     }).rename(columns={D_IMP: "DCM impression", D_CLICK: "DCM click", D_INVALID: "DCM invalid Click"})
+    #     dcm_agg['__dcm_key'] = dcm_agg['__dcm_key'].astype(str).apply(normalize_id)
+    # else:
+    #     dcm_agg = pd.DataFrame(columns=['__dcm_key','date',"DCM impression","DCM click","DCM invalid Click"])
+    
     # ------------------ prepare DCM aggregation (placement + date) ------------------
     if dcm is not None:
         if D_PLACEMENT not in dcm.columns:
             raise ValueError(f"DCM sheet must have '{D_PLACEMENT}' column.")
         dcm['__dcm_key'] = dcm[D_PLACEMENT].astype(str).apply(normalize_id)
         dcm['date'] = to_ymd(dcm[D_DATE]) if D_DATE in dcm.columns else to_ymd(dcm.iloc[:,0])
-        for c in [D_IMP, D_CLICK, D_INVALID]:
+        # include both invalid click and invalid impression if present
+        for c in [D_IMP, D_CLICK, D_INVALID, D_INVALID_IMP]:
             if c not in dcm.columns:
                 dcm[c] = 0
             dcm[c] = pd.to_numeric(dcm[c], errors='coerce').fillna(0)
         dcm_agg = dcm.groupby(['__dcm_key','date'], as_index=False).agg({
-            D_IMP: 'sum', D_CLICK: 'sum', D_INVALID: 'sum'
-        }).rename(columns={D_IMP: "DCM impression", D_CLICK: "DCM click", D_INVALID: "DCM invalid Click"})
+            D_IMP: 'sum', D_CLICK: 'sum', D_INVALID: 'sum', D_INVALID_IMP: 'sum'
+        }).rename(columns={
+            D_IMP: "DCM impression",
+            D_CLICK: "DCM click",
+            D_INVALID: "DCM invalid Click",
+            D_INVALID_IMP: "DCM invalid Impression"
+        })
+        dcm_agg['DCM total impression'] = dcm_agg['DCM impression'] + dcm_agg['DCM invalid Impression']
         dcm_agg['__dcm_key'] = dcm_agg['__dcm_key'].astype(str).apply(normalize_id)
     else:
-        dcm_agg = pd.DataFrame(columns=['__dcm_key','date',"DCM impression","DCM click","DCM invalid Click"])
+        dcm_agg = pd.DataFrame(columns=['__dcm_key','date',"DCM impression","DCM click","DCM invalid Click","DCM invalid Impression"])
+
 
     # ------------------ prepare Celtra aggregation (placement + date) ------------------
     if celtra is not None:
@@ -257,9 +283,9 @@ def make_comparison(input_xlsx: str):
 
                     # Merge date-level DCM (same dcm_frame for all celtras)
                     if not dcm_frame.empty:
-                        merged_local = merged_local.merge(dcm_frame[['date', "DCM impression", "DCM click", "DCM invalid Click"]], on='date', how='left')
+                        merged_local = merged_local.merge(dcm_frame[['date', "DCM impression", "DCM click", "DCM invalid Click", "DCM invalid Impression", "DCM total impression"]], on='date', how='left')
                     else:
-                        merged_local[["DCM impression", "DCM click", "DCM invalid Click"]] = 0
+                        merged_local[["DCM impression", "DCM click", "DCM invalid Click", "DCM invalid Impression", "DCM total impression"]] = 0
 
                     # Merge blis specific to this celtra
                     if not blis_frame_local.empty:
@@ -292,7 +318,7 @@ def make_comparison(input_xlsx: str):
                     # union dates with dcm_frame only
                     if not dcm_frame.empty and 'date' in dcm_frame.columns and not dcm_frame['date'].dropna().empty:
                         dates_df_local = pd.DataFrame({'date': sorted(dcm_frame['date'].dropna().astype(str).tolist())})
-                        merged_local = dates_df_local.merge(dcm_frame[['date', "DCM impression", "DCM click", "DCM invalid Click"]], on='date', how='left')
+                        merged_local = dates_df_local.merge(dcm_frame[['date', "DCM impression", "DCM click", "DCM invalid Click", "DCM invalid Impression", "DCM total impression"]], on='date', how='left')
                         merged_local[["Blis Requested Impression","Blis Shown Impression","Blis clicks","Blis Raw clicks","Blis win count"]] = 0
                         merged_local[["Celtra Requested Impression","Celtra Loaded Impression","Celtra Rendered Impression","Celtra Clicks"]] = 0
                         merged_local["DCM placementID"] = dcm_id_for_group if dcm_id_for_group else np.nan
@@ -346,9 +372,9 @@ def make_comparison(input_xlsx: str):
                     dates_df = pd.DataFrame({'date': all_dates})
                     merged = dates_df.copy()
                     if not dcm_frame.empty:
-                        merged = merged.merge(dcm_frame[['date',"DCM impression","DCM click","DCM invalid Click"]], on='date', how='left')
+                        merged = merged.merge(dcm_frame[['date',"DCM impression","DCM click","DCM invalid Click","DCM invalid Impression","DCM total impression"]], on='date', how='left')
                     else:
-                        merged[["DCM impression","DCM click","DCM invalid Click"]] = 0
+                        merged[["DCM impression","DCM click","DCM invalid Click","DCM invalid Impression","DCM total impression"]] = 0
                     if not blis_frame.empty:
                         merged = merged.merge(blis_frame[['date',"Blis Requested Impression","Blis Shown Impression","Blis clicks","Blis Raw clicks","Blis win count"]], on='date', how='left')
                     else:
@@ -377,7 +403,7 @@ def make_comparison(input_xlsx: str):
                 continue
 
             # numeric coercion + zeros for merged
-            out_numeric = ["DCM impression","DCM click","DCM invalid Click",
+            out_numeric = ["DCM impression","DCM click","DCM invalid Click","DCM invalid Impression","DCM total impression",
                            "Blis Requested Impression","Blis Shown Impression","Blis clicks","Blis Raw clicks","Blis win count",
                            "Celtra Requested Impression","Celtra Loaded Impression","Celtra Rendered Impression","Celtra Clicks"]
             for c in out_numeric:
@@ -387,6 +413,10 @@ def make_comparison(input_xlsx: str):
                     merged[c] = 0
 
             # percent/diff calculations
+            if 'DCM invalid Impression' in merged.columns:
+                merged['DCM total impression'] = merged['DCM impression'] + merged['DCM invalid Impression']
+            else:
+                merged['DCM total impression'] = merged['DCM impression']
             merged['blis vs DCM impression %'] = pct_safe_num(merged['Blis Requested Impression'].values, merged['DCM impression'].values)
             merged['blis vs DCM click %'] = pct_safe_num(merged['Blis clicks'].values, merged['DCM click'].values)
             if 'DCM invalid Click' in merged.columns:
@@ -395,14 +425,14 @@ def make_comparison(input_xlsx: str):
             merged['blis click vs Celtra click %'] = pct_safe_num(merged['Blis clicks'].values, merged['Celtra Clicks'].values) if 'Celtra Clicks' in merged.columns else np.nan
             merged['celtra loaded vs DCM impression %'] = pct_safe_num(merged['Celtra Loaded Impression'].values, merged['DCM impression'].values) if 'Celtra Loaded Impression' in merged.columns else np.nan
             merged['Celtra click vs DCM click %'] = pct_safe_num(merged['Celtra Clicks'].values, merged['DCM click'].values) if 'Celtra Clicks' in merged.columns else np.nan
-
+            merged['blis vs DCM (valid+invalid) %'] = pct_safe_num(merged['Blis Requested Impression'].values, merged['DCM total impression'].values)
             # reorder columns
             desired_order = [
                 'date', 'DCM placementID', 'Celtra placementID',
                 'Blis Requested Impression','Blis Shown Impression','Blis clicks','Blis Raw clicks','Blis win count',
-                'DCM impression','DCM click','DCM invalid Click',
+                'DCM impression','DCM click','DCM invalid Click','DCM invalid Impression','DCM total impression',
                 'Celtra Requested Impression','Celtra Loaded Impression','Celtra Rendered Impression','Celtra Clicks',
-                'blis vs DCM impression %','blis vs DCM click %','Blis raw click vs DCM invalid %',
+                'blis vs DCM impression %','blis vs DCM (valid+invalid) %','blis vs DCM click %','Blis raw click vs DCM invalid %',
                 'blis impression vs celtra loaded %','blis click vs Celtra click %','celtra loaded vs DCM impression %','Celtra click vs DCM click %'
             ]
             final_cols = [c for c in desired_order if c in merged.columns]
@@ -425,7 +455,11 @@ def make_comparison(input_xlsx: str):
                 totals['DCM click'] = dcm_frame['DCM click'].sum() if 'DCM click' in dcm_frame.columns else 0
                 if 'DCM invalid Click' in dcm_frame.columns:
                     totals['DCM invalid Click'] = dcm_frame['DCM invalid Click'].sum()
+                if 'DCM invalid Impression' in dcm_frame.columns:
+                    totals['DCM invalid Impression'] = dcm_frame['DCM invalid Impression'].sum()
 
+            totals['DCM total impression'] = totals.get('DCM impression', 0) + totals.get('DCM invalid Impression', 0)
+            
             def pct_total(numer_total, denom_total):
                 return round((numer_total - denom_total) / numer_total * 100, 2) if numer_total != 0 else np.nan
             if 'Blis Requested Impression' in merged.columns and 'DCM impression' in merged.columns:
@@ -443,6 +477,9 @@ def make_comparison(input_xlsx: str):
             if 'Celtra Clicks' in merged.columns and 'DCM click' in merged.columns:
                 totals['Celtra click vs DCM click %'] = pct_total(totals.get('Celtra Clicks',0), totals.get('DCM click',0))
 
+            # NEW: totals percent for Blis vs DCM (valid + invalid)
+            if 'Blis Requested Impression' in merged.columns and 'DCM total impression' in totals:
+                totals['blis vs DCM (valid+invalid) %'] = pct_total(totals.get('Blis Requested Impression',0), totals.get('DCM total impression',0))
             # placementID values in totals row
             totals['DCM placementID'] = dcm_id_for_group if dcm_id_for_group else np.nan
             # For DCM-group we don't want comma-joined Celtra list in totals; keep as comma list for non-DCM or empty
